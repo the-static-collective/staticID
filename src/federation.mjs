@@ -56,7 +56,7 @@ export function memoryAuthority({app,members,clock=Date.now}){
 }
 // Login flow uses server-side one-use state; this memory implementation is a rehearsal,
 // not suitable for multi-instance or restart-tolerant hosting.
-export function createFederation({origin,providers,authority,clock=Date.now,fetcher=fetch}){
+export function createFederation({origin,providers,authority,flowStore=null,clock=Date.now,fetcher=fetch}){
  const u=new URL(origin);if(u.protocol!=="https:"||u.origin!==origin)fail("INVALID_ORIGIN");
  const configs=structuredClone(providers),flows=new Map();
  const cookie="__Host-staticid-federated",flowCookie="__Host-staticid-federated-flow";
@@ -80,16 +80,17 @@ export function createFederation({origin,providers,authority,clock=Date.now,fetc
    if(url.pathname==="/api/federation/login"&&request.method==="GET"){
     const name=url.searchParams.get("provider");if(!["static","google"].includes(name))fail("UNKNOWN_PROVIDER");
     const p=check(configs[name]),ep=endpoints(name,p),state=randomSecret(),nonce=randomSecret(),verifier=randomSecret(),browser=randomSecret();
-    for(const [k,v] of flows)if(v.expires<=clock())flows.delete(k);
-    if(flows.size>=200)fail("FLOW_LIMIT");
-    flows.set(state,{name,nonce,verifier,browser,expires:clock()+600000});
+    const flow={name,nonce,verifier,browser,expires:clock()+600000};
+    if(flowStore)await flowStore.put(state,flow);else{for(const [k,v] of flows)if(v.expires<=clock())flows.delete(k);if(flows.size>=200)fail("FLOW_LIMIT");flows.set(state,flow)}
     const target=new URL(ep.auth);target.search=new URLSearchParams({client_id:p.clientId,redirect_uri:callback,response_type:"code",scope:"openid email",state,nonce,code_challenge:b64url(await sha256Bytes(verifier)),code_challenge_method:"S256"}).toString();
     return new Response(null,{status:302,headers:{location:target.href,"cache-control":"no-store","referrer-policy":"no-referrer","set-cookie":setCookie(flowCookie,browser,600)}});
    }
    if(url.pathname==="/api/federation/callback"&&request.method==="GET"){
-    const state=url.searchParams.get("state"),f=flows.get(state),code=url.searchParams.get("code");
+    const state=url.searchParams.get("state"),code=url.searchParams.get("code"),browser=cookieValue(request,flowCookie);
+    if(!opaque(code))fail("FLOW_DENIED");
+    const f=flowStore?await flowStore.take(state,browser):flows.get(state);
     if(!f||f.expires<=clock()||!sameString(f.browser,cookieValue(request,flowCookie))||!opaque(code))fail("FLOW_DENIED");
-    flows.delete(state);const p=check(configs[f.name]),ep=endpoints(f.name,p);
+    if(!flowStore)flows.delete(state);const p=check(configs[f.name]),ep=endpoints(f.name,p);
     const fields={grant_type:"authorization_code",code,redirect_uri:callback,code_verifier:f.verifier};
     const headers={"content-type":"application/x-www-form-urlencoded"};
     if(f.name==="static")headers.authorization="Basic "+btoa(p.clientId+":"+p.clientSecret);else Object.assign(fields,{client_id:p.clientId,client_secret:p.clientSecret});
