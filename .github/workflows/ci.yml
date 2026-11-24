@@ -1,0 +1,20 @@
+name: STATIC ID identity contract tests
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm run check
+      - name: No credential material in repository
+        run: |
+          if grep -R -nE 'sk_live_|sb_secret_|nsk_live_|SUPABASE_SERVICE_ROLE_KEY\s*=' src tests; then exit 1; fi
