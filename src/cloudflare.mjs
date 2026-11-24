@@ -68,6 +68,7 @@ export async function handleStaticIdRequest(request, env, fetcher=fetch) {
     appRequest(request, config);
   } catch { return json({ error:"Static ID is not configured" },503); }
 
+  let failureStage = "request";
   try {
     if (url.pathname === "/api/static-id/login" && request.method === "GET") {
       const start = await beginAuthorization(config);
@@ -83,17 +84,24 @@ export async function handleStaticIdRequest(request, env, fetcher=fetch) {
     if (url.pathname === "/api/static-id/callback" && request.method === "GET") {
       const code = url.searchParams.get("code") || "";
       const state = url.searchParams.get("state") || "";
+      failureStage = "flow_cookie_missing";
       const sealed = cookieValue(request,FLOW_COOKIE);
       if (!sealed) throw new IdentityError("OAuth flow expired");
+      failureStage = "flow_cookie_invalid";
       const flow = await decryptJson(sealed,config,"flow");
+      failureStage = "flow_expired_or_state_mismatch";
       if (!flow || !Number.isFinite(flow.expires) || flow.expires <= Date.now() ||
           !sameString(state,flow.state)) throw new IdentityError("OAuth state mismatch");
+      failureStage = "token_exchange";
       const tokens = await tokenExchange(config,code,flow.verifier,fetcher);
+      failureStage = "id_token_verification";
       const claims = await verifyJwt(tokens.id_token, {
         issuer:config.issuer,audience:config.clientId,nonce:flow.nonce,fetcher
       });
+      failureStage = "owner_verification";
       ensureOwner(claims,config);
       // An ID token cannot be substituted for an access token.
+      failureStage = "access_token_verification";
       const access = await verifyJwt(tokens.access_token,{
         issuer:config.issuer,audience:"authenticated",
         expectedClientId:config.clientId,fetcher
@@ -101,6 +109,7 @@ export async function handleStaticIdRequest(request, env, fetcher=fetch) {
       if (!sameString(access.sub,claims.sub)) throw new IdentityError("Account identity mismatch");
       const lifetime = Math.min(maxSessionSeconds,Math.floor(access.exp-Date.now()/1000));
       if (lifetime < 1) throw new IdentityError("Session already expired");
+      failureStage = "session_creation";
       const session = await encryptJson({
         accessToken:tokens.access_token,
         expires:Date.now()+lifetime*1000
@@ -126,7 +135,7 @@ export async function handleStaticIdRequest(request, env, fetcher=fetch) {
     return json({error:"Not found"},404);
   } catch (err) {
     // Never return TOTP codes, OAuth codes, JWTs, JWKS internals or upstream errors.
-    const response=json({error:"Authentication failed"},401);
+    const response=json({error:"Authentication failed",stage:failureStage},401);
     if (url.pathname === "/api/static-id/callback")
       response.headers.append("Set-Cookie",setCookie(FLOW_COOKIE,"",0));
     return response;
