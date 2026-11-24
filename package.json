@@ -6,7 +6,8 @@
   "description": "Shared Supabase OIDC PKCE client and protected Cloudflare sessions for Static Collective apps",
   "exports": {
     "./oidc": "./src/oidc.mjs",
-    "./cloudflare": "./src/cloudflare.mjs"
+    "./cloudflare": "./src/cloudflare.mjs",
+    "./federation": "./src/federation.mjs"
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
