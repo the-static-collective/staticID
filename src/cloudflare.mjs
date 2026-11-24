@@ -4,7 +4,7 @@
 // App APIs call requireStaticIdOwner(request, env) on every protected request.
 import {
   identityConfig, beginAuthorization, tokenExchange, verifyJwt, ensureOwner,
-  encryptJson, decryptJson, sameString, IdentityError
+  encryptJson, decryptJson, sameString, IdentityError, tokenFailureStage
 } from "./oidc.mjs";
 
 export const SESSION_COOKIE = "__Host-staticid-session";
@@ -135,7 +135,7 @@ export async function handleStaticIdRequest(request, env, fetcher=fetch) {
     return json({error:"Not found"},404);
   } catch (err) {
     // Never return TOTP codes, OAuth codes, JWTs, JWKS internals or upstream errors.
-    const response=json({error:"Authentication failed",stage:failureStage},401);
+    const response=json({error:"Authentication failed",stage:failureStage==="token_exchange"?tokenFailureStage(err):failureStage},401);
     if (url.pathname === "/api/static-id/callback")
       response.headers.append("Set-Cookie",setCookie(FLOW_COOKIE,"",0));
     return response;

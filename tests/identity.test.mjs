@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   randomSecret,b64url,unb64url,identityConfig,beginAuthorization,encryptJson,decryptJson,
-  verifyJwt,ensureOwner,IdentityError
+  verifyJwt,ensureOwner,IdentityError,tokenExchange,tokenFailureStage
 } from "../src/oidc.mjs";
 import {
   SESSION_COOKIE,FLOW_COOKIE,requireStaticIdOwner,handleStaticIdRequest
@@ -107,7 +107,9 @@ test("full Cloudflare OAuth cycle is tied to the pinned owner and actual JWT",as
     if(url.endsWith("/oauth/token")){
       assert.equal(options.method,"POST");
       assert.ok(options.headers.Authorization.startsWith("Basic "));
-      assert.equal(options.body.get("code_verifier"),flow.verifier);
+      assert.equal(typeof options.body,"string");
+      assert.equal(new URLSearchParams(options.body).get("code_verifier"),flow.verifier);
+      assert.equal(options.redirect,"manual");
       return new Response(JSON.stringify({id_token:idToken,access_token:accessToken}),{status:200});
     }
     throw new Error("Unexpected request");
@@ -161,5 +163,40 @@ test("callback failures expose only a fixed stage, not secrets or upstream error
   const wrong=await handleStaticIdRequest(req(callback.replace(flow.state,"wrong"),{headers:{Cookie:flowCookie}}),cfg);
   assert.deepEqual(await wrong.json(),{error:"Authentication failed",stage:"flow_expired_or_state_mismatch"});
   const upstream=await handleStaticIdRequest(req(callback,{headers:{Cookie:flowCookie}}),cfg,async()=>{throw Error("private secret example")});
-  assert.deepEqual(await upstream.json(),{error:"Authentication failed",stage:"token_exchange"});
+  assert.deepEqual(await upstream.json(),{error:"Authentication failed",stage:"token_transport"});
+});
+
+test("token exchange uses encoded form bytes, exact endpoint and redacted error classes",async()=>{
+  const config=identityConfig(env()), verifier=randomSecret();
+  const code="code123456";
+  const cases=[
+    [async()=>{throw new Error("secret material")}, "token_transport"],
+    [async()=>new Response("",{status:302,headers:{Location:"https://bad.example/"}}), "token_redirect_refused"],
+    [async()=>new Response('{"error":"invalid_client","error_description":"secret material"}',{status:400}), "token_client_rejected"],
+    [async()=>new Response('{"error":"invalid_grant"}',{status:400}), "token_grant_rejected"],
+    [async()=>new Response("bad gateway",{status:502}), "token_http_rejected"],
+    [async()=>new Response("not json",{status:200}), "token_response_invalid"],
+    [async()=>new Response("{}",{status:200}), "token_response_missing_credentials"]
+  ];
+  for(const [fetcher,stage] of cases) {
+    await assert.rejects(()=>tokenExchange(config,code,verifier,fetcher),err=>{
+      assert.equal(tokenFailureStage(err),stage);
+      assert.doesNotMatch(err.message,/secret material/);
+      return true;
+    });
+  }
+  const notCalled=()=>assert.fail("invalid parameters must not send a request");
+  for(const [cfg,c,v,stage] of [
+    [config,"",verifier,"token_code_invalid"],
+    [config,code,"bad","token_verifier_invalid"],
+    [{...config,clientSecret:"not-ascii-…"},code,verifier,"token_client_encoding"]
+  ]) await assert.rejects(()=>tokenExchange(cfg,c,v,notCalled),err=>tokenFailureStage(err)===stage);
+  const result=await tokenExchange(config,code,verifier,async(url,opts)=>{
+    assert.equal(url,issuer+"/oauth/token");
+    assert.equal(opts.redirect,"manual");
+    assert.equal(opts.headers["Content-Type"],"application/x-www-form-urlencoded");
+    assert.equal(new URLSearchParams(opts.body).get("code"),code);
+    return new Response(JSON.stringify({access_token:"access",id_token:"identity"}));
+  });
+  assert.equal(result.id_token,"identity");
 });

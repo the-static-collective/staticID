@@ -78,30 +78,78 @@ export async function beginAuthorization(config) {
   }).toString();
   return { url: url.toString(), state, nonce, verifier };
 }
-export async function tokenExchange(config, code, verifier, fetcher = fetch) {
-  if (!/^[A-Za-z0-9._~-]{8,4096}$/.test(String(code)) ||
-      !/^[A-Za-z0-9_-]{43,128}$/.test(String(verifier))) throw new IdentityError("Invalid OAuth callback");
-  const response = await fetcher(config.issuer + "/oauth/token", {
-    method: "POST",
-    headers: {
-      "Authorization": "Basic " + btoa(config.clientId + ":" + config.clientSecret),
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Accept": "application/json"
-    },
-    body: new URLSearchParams({
-      grant_type: "authorization_code", code,
-      redirect_uri: config.origin + "/api/static-id/callback",
-      code_verifier: verifier
-    }),
-    redirect: "error"
-  });
-  if (!response.ok) throw new IdentityError("OAuth exchange refused");
-  const raw = await response.text();
-  if (raw.length > 16_384) throw new IdentityError("Oversized OAuth response");
-  const tokens = JSON.parse(raw);
-  if (!tokens || typeof tokens.id_token !== "string" || typeof tokens.access_token !== "string") {
-    throw new IdentityError("Missing OAuth credentials");
+// Only fixed diagnostic classifications may cross the public callback boundary.
+export class TokenExchangeError extends IdentityError {
+  constructor(stage) {
+    super("OAuth token exchange failed");
+    this.stage=stage;
   }
+}
+const exchangeStages=new Set([
+  "token_code_invalid","token_verifier_invalid","token_client_encoding",
+  "token_request_build","token_transport","token_redirect_refused",
+  "token_client_rejected","token_grant_rejected","token_http_rejected",
+  "token_response_unreadable","token_response_invalid","token_response_missing_credentials"
+]);
+export function tokenFailureStage(error) {
+  return error instanceof TokenExchangeError && exchangeStages.has(error.stage)
+    ? error.stage : "token_exchange";
+}
+export async function tokenExchange(config, code, verifier, fetcher = fetch) {
+  if (!/^[A-Za-z0-9._~-]{8,4096}$/.test(String(code)))
+    throw new TokenExchangeError("token_code_invalid");
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(String(verifier)))
+    throw new TokenExchangeError("token_verifier_invalid");
+  // Supabase issues printable ASCII UUIDs and confidential client secrets.
+  // Fail closed on pasted unicode/whitespace instead of leaking the credential.
+  if (!/^[\x21-\x7e]+$/.test(config.clientId) || !/^[\x21-\x7e]+$/.test(config.clientSecret))
+    throw new TokenExchangeError("token_client_encoding");
+  let options;
+  try {
+    options = {
+      method: "POST",
+      headers: {
+        "Authorization": "Basic " + btoa(config.clientId + ":" + config.clientSecret),
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      // Serialize explicitly: identical form bytes in Node and Workers.
+      body: new URLSearchParams({
+        grant_type: "authorization_code", code,
+        redirect_uri: config.origin + "/api/static-id/callback",
+        code_verifier: verifier
+      }).toString(),
+      // Never follow a redirect with confidential credentials.
+      redirect: "manual"
+    };
+  } catch { throw new TokenExchangeError("token_request_build"); }
+  let response;
+  try { response = await fetcher(config.issuer + "/oauth/token", options); }
+  catch { throw new TokenExchangeError("token_transport"); }
+  if (response.status >= 300 && response.status < 400)
+    throw new TokenExchangeError("token_redirect_refused");
+  if (!response.ok) {
+    // Classify only standard OAuth error codes. Do not disclose upstream messages.
+    let errorCode;
+    try {
+      const raw=await response.text();
+      if (raw.length<=16384) errorCode=JSON.parse(raw)?.error;
+    } catch {}
+    if (response.status===401 || errorCode==="invalid_client")
+      throw new TokenExchangeError("token_client_rejected");
+    if (errorCode==="invalid_grant")
+      throw new TokenExchangeError("token_grant_rejected");
+    throw new TokenExchangeError("token_http_rejected");
+  }
+  let raw;
+  try { raw=await response.text(); }
+  catch { throw new TokenExchangeError("token_response_unreadable"); }
+  if (raw.length > 16_384) throw new TokenExchangeError("token_response_invalid");
+  let tokens;
+  try { tokens=JSON.parse(raw); }
+  catch { throw new TokenExchangeError("token_response_invalid"); }
+  if (!tokens || typeof tokens.id_token !== "string" || typeof tokens.access_token !== "string")
+    throw new TokenExchangeError("token_response_missing_credentials");
   return tokens;
 }
 function decodeJwtPart(segment) {
