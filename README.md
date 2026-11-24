@@ -67,3 +67,7 @@ Official references: [Supabase OAuth 2.1 overview](https://supabase.com/docs/gui
 ## Application onboarding
 
 `npm run onboard -- plan PROJECT https://APP.abundent.org App Name` previews a new app registration. `apply` performs explicitly confirmed local provisioning and `probe` checks anonymous access. See [the complete onboarding guide](docs/ONBOARDING.md). No existing application is modified automatically.
+
+## Application registry
+
+`npm run registry -- list` reports identity relationships, declared capabilities and outstanding evidence checks. See [STATIC ID 003](docs/REGISTRY.md). This inventory does not grant access or store credentials.

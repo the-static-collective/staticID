@@ -1,0 +1,46 @@
+{
+  "schema": "static-id/registry/v1",
+  "identity": {
+    "issuer": "https://kbhqacsdvjsstzyplqij.supabase.co/auth/v1",
+    "consent": "https://humkin.abundent.org/oauth/consent/"
+  },
+  "apps": [
+    {
+      "id": "humkin",
+      "name": "HUMKIN",
+      "origin": "https://humkin.abundent.org",
+      "kind": "identity-host",
+      "project": null,
+      "lifecycle": "identity-host",
+      "capabilities": [
+        "identity.consent",
+        "identity.owner-login"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "fileport",
+      "name": "Fileport",
+      "origin": "https://fileport.abundent.org",
+      "kind": "pages-client",
+      "project": "fileport",
+      "lifecycle": "pilot",
+      "capabilities": [
+        "files.owner-read",
+        "files.owner-write",
+        "files.invited-share",
+        "files.recovery"
+      ],
+      "evidence": [
+        {
+          "schema": "static-id/check/v1",
+          "app": "fileport",
+          "check": "owner-login",
+          "method": "owner-report",
+          "result": "pass",
+          "observedOn": "2026-11-24"
+        }
+      ]
+    }
+  ]
+}
