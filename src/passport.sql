@@ -34,4 +34,4 @@ BEGIN
  UPDATE passport.invitations SET consumed_at=clock_timestamp() WHERE app=p_app AND code_hash=p_hash;
  RETURN true;
 END;
-$;
+$$;
