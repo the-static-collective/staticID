@@ -187,7 +187,8 @@ export async function verifyJwt(jwt, {
   let keys = jwks;
   if (!keys) {
     const response = await fetcher(issuer + "/.well-known/jwks.json", {
-      headers: { Accept: "application/json" }, redirect: "error"
+      // Workers only implement manual and follow. Reject any redirect below.
+      headers: { Accept: "application/json" }, redirect: "manual"
     });
     if (!response.ok) throw new IdentityError("Identity keys unavailable");
     const raw = await response.text();
