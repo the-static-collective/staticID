@@ -71,3 +71,7 @@ Official references: [Supabase OAuth 2.1 overview](https://supabase.com/docs/gui
 ## Application registry
 
 `npm run registry -- list` reports identity relationships, declared capabilities and outstanding evidence checks. See [STATIC ID 003](docs/REGISTRY.md). This inventory does not grant access or store credentials.
+
+## Village Gate
+
+`npm run gate:build` creates a public, credential-free app launcher from the registry. See [STATIC ID 004 — Village Gate](docs/VILLAGE-GATE.md) for deployment and DNS setup. The Gate does not grant or manage permissions.

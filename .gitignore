@@ -5,3 +5,4 @@ node_modules/
 .wrangler/
 dist/
 .static-id/
+gate-dist/
