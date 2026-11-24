@@ -33,5 +33,5 @@ BEGIN
  IF NOT FOUND THEN RETURN false; END IF;
  UPDATE passport.invitations SET consumed_at=clock_timestamp() WHERE app=p_app AND code_hash=p_hash;
  RETURN true;
-END
-$$;
+END;
+$;
