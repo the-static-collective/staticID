@@ -148,3 +148,18 @@ test("unconfigured static ID never authorizes, but cannot affect other routes",a
   const result=await handleStaticIdRequest(req("/api/static-id/login"),{});
   assert.equal(result.status,503);
 });
+
+test("callback failures expose only a fixed stage, not secrets or upstream errors",async()=>{
+  const cfg=env(),config=identityConfig(cfg);
+  const start=await handleStaticIdRequest(req("/api/static-id/login"),cfg);
+  const flowCookie=getCookie(start,FLOW_COOKIE), flow=await decryptJson(flowCookie.split("=")[1],config,"flow");
+  const callback="/api/static-id/callback?code=code123456&state="+flow.state;
+  const missing=await handleStaticIdRequest(req(callback),cfg);
+  assert.deepEqual(await missing.json(),{error:"Authentication failed",stage:"flow_cookie_missing"});
+  const bad=await handleStaticIdRequest(req(callback,{headers:{Cookie:FLOW_COOKIE+"=invalid"}}),cfg);
+  assert.deepEqual(await bad.json(),{error:"Authentication failed",stage:"flow_cookie_invalid"});
+  const wrong=await handleStaticIdRequest(req(callback.replace(flow.state,"wrong"),{headers:{Cookie:flowCookie}}),cfg);
+  assert.deepEqual(await wrong.json(),{error:"Authentication failed",stage:"flow_expired_or_state_mismatch"});
+  const upstream=await handleStaticIdRequest(req(callback,{headers:{Cookie:flowCookie}}),cfg,async()=>{throw Error("private secret example")});
+  assert.deepEqual(await upstream.json(),{error:"Authentication failed",stage:"token_exchange"});
+});
