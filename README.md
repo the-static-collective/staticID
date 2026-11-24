@@ -75,3 +75,6 @@ Official references: [Supabase OAuth 2.1 overview](https://supabase.com/docs/gui
 ## Village Gate
 
 `npm run gate:build` creates a public, credential-free app launcher from the registry. See [STATIC ID 004 — Village Gate](docs/VILLAGE-GATE.md) for deployment and DNS setup. The Gate does not grant or manage permissions.
+
+## Federation 005 (draft)
+Additive `src/federation.mjs` supports separately verified Google and existing Supabase OIDC identities, explicit issuer/subject membership, app-local scopes and revocable opaque sessions. Login uses one-use server-side state, nonce, PKCE and a browser-bound cookie; requests identity scopes only. No email linking, provider token persistence, automatic enrollment, Google Workspace scopes, or modification to existing owner routes. In-memory authority and flow store are strictly single-process rehearsal, not durable production authentication. Actual Google/Supabase clients, live sign-in, durable session store, distributed rate limiting and owner-approved membership provisioning are outstanding. `npm test` includes signed synthetic Google and existing owner tests.
