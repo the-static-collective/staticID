@@ -16,8 +16,9 @@ export function postgresAuthority({app,query,clock=Date.now}){
  },
  async authenticate(token,scope){
   if(!valid(token)||!opaque(scope))return null;
-  const q=await query("SELECT m.principal,s.expires_at FROM passport.sessions s JOIN passport.members m USING(app,issuer,subject) WHERE s.app=$1 AND s.token_hash=$2 AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() AND m.active AND m.revision=s.membership_revision AND $3=ANY(m.scopes)",[app,await tokenDigest(token),scope]);
-  const r=q.rows[0];return r?{app,principal:r.principal,scope,expiresAt:Date.parse(r.expires_at)}:null;
+  const sessionHash=await tokenDigest(token);
+  const q=await query("SELECT m.principal,s.expires_at FROM passport.sessions s JOIN passport.members m USING(app,issuer,subject) WHERE s.app=$1 AND s.token_hash=$2 AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() AND m.active AND m.revision=s.membership_revision AND $3=ANY(m.scopes)",[app,sessionHash,scope]);
+  const r=q.rows[0];return r?{app,principal:r.principal,scope,expiresAt:Date.parse(r.expires_at),sessionHash}:null;
  },
  async logout(token){if(valid(token))await query("UPDATE passport.sessions SET revoked_at=clock_timestamp() WHERE app=$1 AND token_hash=$2 AND revoked_at IS NULL",[app,await tokenDigest(token)])},
  // Administrative methods are trusted server operations; never exposed as anonymous routes.
