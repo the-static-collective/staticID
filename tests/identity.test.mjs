@@ -102,8 +102,12 @@ test("full Cloudflare OAuth cycle is tied to the pinned owner and actual JWT",as
     client_id:config.clientId,exp:now+600,iat:now-2});
   const calls=[];
   const fetcher=async(url,options={})=>{
+    assert.notEqual(options.redirect,"error","Cloudflare Workers does not implement redirect:error");
     calls.push({url,options});
-    if(url.endsWith("/.well-known/jwks.json"))return new Response(JSON.stringify({keys:[publicJwk]}),{status:200});
+    if(url.endsWith("/.well-known/jwks.json")){
+      assert.equal(options.redirect,"manual");
+      return new Response(JSON.stringify({keys:[publicJwk]}),{status:200});
+    }
     if(url.endsWith("/oauth/token")){
       assert.equal(options.method,"POST");
       assert.ok(options.headers.Authorization.startsWith("Basic "));
@@ -199,4 +203,22 @@ test("token exchange uses encoded form bytes, exact endpoint and redacted error 
     return new Response(JSON.stringify({access_token:"access",id_token:"identity"}));
   });
   assert.equal(result.id_token,"identity");
+});
+
+test("remote JWKS verification is Workers-compatible and refuses redirect responses",async()=>{
+  const {publicJwk,signed}=await fixtureSigner();
+  const now=Math.floor(Date.now()/1000);
+  const token=await signed({iss:issuer,aud:"fileport-oauth-client",nonce:"n-1",sub:owner,
+    exp:now+300,iat:now-1,email_verified:true});
+  const opts={issuer,audience:"fileport-oauth-client",nonce:"n-1"};
+  const claims=await verifyJwt(token,{...opts,fetcher:async(url,init)=>{
+    assert.equal(url,issuer+"/.well-known/jwks.json");
+    assert.equal(init.redirect,"manual");
+    return new Response(JSON.stringify({keys:[publicJwk]}),{status:200});
+  }});
+  assert.equal(claims.sub,owner);
+  await assert.rejects(()=>verifyJwt(token,{...opts,fetcher:async(url,init)=>{
+    assert.equal(init.redirect,"manual");
+    return new Response(null,{status:302,headers:{Location:"https://untrusted.example/jwks"}});
+  }}),/Identity keys unavailable/);
 });
