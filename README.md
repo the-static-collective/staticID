@@ -2,7 +2,7 @@
 
 STATIC ID is the Static Collective's **reusable authentication adapter**, built around the **existing HUMKIN Proton Authenticator → Supabase Auth** identity. Apps do **not** get their own TOTP seeds and do **not** copy HUMKIN's service-role key. A single identity may have different, explicitly granted roles across independently owned applications and databases.
 
-**Status (STATIC ID 001):** tested OAuth 2.1 PKCE/OIDC client and Cloudflare Worker integration library. **Not deployed or connected to Fileport yet.** HUMKIN's existing login and live Supabase configuration were not altered.
+**Status:** Fileport is the first live OAuth pilot; the owner reported successful sign-in. Protected operations, logout and recovery still require live verification. See [STATIC ID 002 application onboarding](docs/ONBOARDING.md) for connecting additional applications without recreating the existing identity.
 
 ## Source of truth: existing HUMKIN login
 
@@ -63,3 +63,7 @@ Official references: [Supabase OAuth 2.1 overview](https://supabase.com/docs/gui
 ## Testing
 
 `npm run check` runs signing and negative-path tests. Tests use generated synthetic keys and make **no live service changes**.
+
+## Application onboarding
+
+`npm run onboard -- plan PROJECT https://APP.abundent.org App Name` previews a new app registration. `apply` performs explicitly confirmed local provisioning and `probe` checks anonymous access. See [the complete onboarding guide](docs/ONBOARDING.md). No existing application is modified automatically.
