@@ -1,0 +1,46 @@
+name: Publish Village Gate
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'gate/**'
+      - 'registry/apps.json'
+      - 'tools/build-gate.mjs'
+      - 'src/registry.mjs'
+      - 'src/onboarding.mjs'
+      - 'src/oidc.mjs'
+      - 'tests/**'
+      - 'package.json'
+      - '.github/workflows/gate-pages.yml'
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: village-gate-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run check
+      - run: npm run gate:build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: gate-dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4
