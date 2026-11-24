@@ -76,8 +76,10 @@ test("JWT signatures, audience, nonce, expiry and owner require independent proo
   assert.equal(ensureOwner(claims,identityConfig(env())).sub,owner);
   await assert.rejects(()=>verifyJwt(token,{...opts,nonce:"bad"}),IdentityError);
   await assert.rejects(()=>verifyJwt(token,{...opts,audience:"another-app"}),IdentityError);
-  await assert.rejects(()=>verifyJwt(await signed({...claims,exp:now-3}),opts),IdentityError);
-  await assert.rejects(()=>verifyJwt(await signed({...claims,sub:other}),{...opts,nonce:"wrong"}),IdentityError);
+  const expired=await signed({...claims,exp:now-3});
+  await assert.rejects(()=>verifyJwt(expired,opts),IdentityError);
+  const wrongSubject=await signed({...claims,sub:other});
+  await assert.rejects(()=>verifyJwt(wrongSubject,{...opts,nonce:"wrong"}),IdentityError);
   assert.throws(()=>ensureOwner({...claims,sub:other},identityConfig(env())),IdentityError);
   assert.throws(()=>ensureOwner({...claims,email_verified:false},identityConfig(env())),IdentityError);
   const altered=token.split(".");altered[1]=b64url(asBytes({...claims,sub:other}));
@@ -120,7 +122,7 @@ test("full Cloudflare OAuth cycle is tied to the pinned owner and actual JWT",as
   }),cfg,fetcher);
   assert.equal(callback.status,303);
   assert.equal(callback.headers.get("Location"),origin+"/");
-  assert.match(getCookie(callback,FLOW_COOKIE),/Max-Age=0/);
+  assert.match(callback.headers.getSetCookie().find(s=>s.startsWith(FLOW_COOKIE+"=")),/Max-Age=0/);
   const sessionCookie=getCookie(callback,SESSION_COOKIE);
   assert.ok(sessionCookie);
   assert.match(callback.headers.getSetCookie().join(" " ),/HttpOnly/);
@@ -136,7 +138,7 @@ test("full Cloudflare OAuth cycle is tied to the pinned owner and actual JWT",as
   assert.equal(logoutBad.status,403);
   const logout=await handleStaticIdRequest(req("/api/static-id/logout",{method:"POST",headers:{Cookie:sessionCookie,Origin:origin}}),cfg,fetcher);
   assert.equal(logout.status,200);
-  assert.match(getCookie(logout,SESSION_COOKIE),/Max-Age=0/);
+  assert.match(logout.headers.getSetCookie().find(s=>s.startsWith(SESSION_COOKIE+"=")),/Max-Age=0/);
   assert.equal(await requireStaticIdOwner(req("/api/admin/files"),cfg,fetcher),false);
   assert.ok(calls.some(x=>x.url.endsWith("/oauth/token")));
 });
